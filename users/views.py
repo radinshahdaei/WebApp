@@ -69,7 +69,7 @@ class CreateUser(APIView):
             if not username_acceptibility(username):
                 return Response({'Bad Request': 'Username\'s format is wrong'}, status=status.HTTP_400_BAD_REQUEST)
             
-            if not password_acceptibility(password):
+            if not password_acceptibility(serializer.data.get('password')):
                 return Response({'Bad Request': 'Password\'s format is wrong'}, status=status.HTTP_400_BAD_REQUEST)
 
             queryset = User.objects.filter(username=username)
@@ -82,12 +82,14 @@ class CreateUser(APIView):
             
         return Response({'Bad Request': 'Non proper request'})
     
-class CheckPassword(APIView):
+class LoginView(APIView):
     serializer_class = UserSerializer
     
     def post(self, request, format=None):
-        serializer = self.serializer_class(data=request.data)
+        if not self.request.session.exists(self.request.session.session_key):
+            self.request.session.create()
 
+        serializer = self.serializer_class(data=request.data)
         if serializer.is_valid():
             username = serializer.data.get('username')
             password = make_hash(serializer.data.get('password'))
@@ -99,12 +101,40 @@ class CheckPassword(APIView):
                 user = User.objects.filter(username=username).first()
 
                 if user.password == password:
-                    return Response({'Message': 'Correct Password'}, status=status.HTTP_200_OK)
+                    self.request.session['user_id'] = user.id
+                    self.request.session['is_authenticated'] = True
+                    return Response({'Message': 'Logged in'}, status=status.HTTP_200_OK)
                 else:
                     return Response({'Bad Request': 'Wrong password'}, status=status.HTTP_401_UNAUTHORIZED)
         return Response({'Bad Request': 'Non proper request'})
 
 
+class WhoIsLoggedIn(APIView):
 
+    def get(self, request, format=None):
+        if not self.request.session.exists(self.request.session.session_key):
+            self.request.session.create()
+        
+        if self.request.session.get('is_authenticated', False):
+            user = User.objects.filter(id=self.request.session.get('user_id')).first()
+            return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
+        
+        else:
+            return Response({'Message': 'No one is there'}, status=status.HTTP_204_NO_CONTENT)
+
+
+class LogOutView(APIView):
+
+    def get(self, request, format=None):
+        if not self.request.session.exists(self.request.session.session_key):
+            self.request.session.create()
+        
+        if self.request.session.get('is_authenticated', False):
+            self.request.session['is_authenticated'] = False
+            self.request.session.pop('user_id')
+            return Response({'Message': 'Logout successful'}, status=status.HTTP_200_OK)
+        
+        else:
+            return Response({'Message': 'No one is there'}, status=status.HTTP_204_NO_CONTENT)
         
 
